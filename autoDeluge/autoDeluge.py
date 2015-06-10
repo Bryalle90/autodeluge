@@ -216,7 +216,7 @@ class Notifier():
 		if not self.pb_info['devices'] == ['']:
 			devices = pushbullet.getDevices()
 			for device in devices:
-				if device['pushable'] and device['nickname'] in devices:
+				if device['pushable'] and device['nickname'] in self.pb_info['devices']:
 					pushbullet.pushNote(device['iden'], subject, body)
 		else:
 			pushbullet.pushNote('', subject, body)
@@ -274,7 +274,7 @@ class Notifier():
 		em.send_email(self.email_info, msg)
 	
 class FileBot():
-	def __init__(self, fb, ow):
+	def __init__(self, fb, ow=False):
 		self.fb = fb
 		self.conflict = 'override' if ow else 'skip'
 		
@@ -299,7 +299,8 @@ class FileBot():
 		except Exception, e:
 			print 'could not rename file:', str(e)
 			
-	def extract(self, source, dest):
+	def extract(self, torrent, dest):
+		source = os.path.normpath(os.path.join(torrent.path, torrent.name))
 		fb_args = [
 			self.fb,
 			'-extract', source,
@@ -318,7 +319,7 @@ class MediaServer():
 		self.plexScanner = None
 		
 	def scan(self):
-		if plex and plexScanner:
+		if self.plex and self.plexScanner:
 			plex_args = [
 				plexScanner, '-s'
 			]
@@ -342,7 +343,7 @@ if __name__ == "__main__":
 	
 	config = processor.readConfig(root, 'config')
 	
-	filebot = Filebot(os.path.normpath(os.path.join(root, 'Lib', 'FileBot_4.6', 'filebot')), config.getboolean('General', 'overwrite'))
+	filebot = FileBot(os.path.normpath(os.path.join(root, 'Lib', 'FileBot_4.6', 'filebot')), config.getboolean('General', 'overwrite'))
 	server = MediaServer(config.getboolean('Plex', 'enable'))
 	if server.plex:
 		server.plexScanner = os.path.normpath(config.get("Plex", "PlexMediaScanner"))
@@ -405,7 +406,8 @@ if __name__ == "__main__":
 			processor.createDir(processingDir)
 			print 'copying and extracting files to:\n\t', processingDir
 			print '--'
-			filebot.extract(torrent, processingDir)
+			for file in filesToExtract:
+				processor.extract(file, processingDir)
 			for file in filesToCopy:
 				processor.copyFile(file, processingDir)
 			print '--\n'
@@ -437,9 +439,6 @@ if __name__ == "__main__":
 				'time': time.strftime("%I:%M:%S%p")
 			}
 			notifier.send()
-			
-			# update media server
-			server.scan()
 			
 		else:
 			print 'could not find label config file'
