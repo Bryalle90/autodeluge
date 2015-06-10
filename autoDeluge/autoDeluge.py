@@ -312,6 +312,21 @@ class FileBot():
 		except Exception, e:
 			print 'could not extract files:', str(e)
 	
+class MediaServer():
+	def __init__(self, plex=False):
+		self.plex = plex
+		self.plexScanner = None
+		
+	def scan(self):
+		if plex and plexScanner:
+			plex_args = [
+				plexScanner, '-s'
+			]
+			try:
+				subprocess.call(plex_args)
+			except Exception, e:
+				print 'could not extract files:', str(e)
+	
 if __name__ == "__main__":
 	print HEADER
 	print 'by:', NAME
@@ -328,6 +343,10 @@ if __name__ == "__main__":
 	config = processor.readConfig(root, 'config')
 	
 	filebot = Filebot(os.path.normpath(os.path.join(root, 'Lib', 'FileBot_4.6', 'filebot')), config.getboolean('General', 'overwrite'))
+	server = MediaServer(config.getboolean('Plex', 'enable'))
+	if server.plex:
+		server.plexScanner = os.path.normpath(config.get("Plex", "PlexMediaScanner"))
+	
 	notifier = Notifier(config.getboolean('PushBullet', 'enable'), config.getboolean('Email', 'enable'))
 	notifier.email_info = {
 		'server': config.get("Email", "SMTPServer"),
@@ -418,6 +437,10 @@ if __name__ == "__main__":
 				'time': time.strftime("%I:%M:%S%p")
 			}
 			notifier.send()
+			
+			# update media server
+			server.scan()
+			
 		else:
 			print 'could not find label config file'
 			
