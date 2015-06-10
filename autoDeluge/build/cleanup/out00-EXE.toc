@@ -1,0 +1,9 @@
+('G:\\Projects\\autoDeluge\\autoDeluge\\build\\cleanup\\cleanup.exe',
+ False,
+ False,
+ None,
+ None,
+ [],
+ None,
+ False,
+ 1433904492L)
