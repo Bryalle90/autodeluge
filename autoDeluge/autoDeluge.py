@@ -189,26 +189,6 @@ class Processor():
 			if len(fileList) == 0 and len(subdirList) == 0:
 				print 'removing directory:', dirName
 				os.rmdir(dirName)
-			
-	def renameAndMove(self, filebot, source, dest, db, format, query, lang='en', ow=True):
-		conflict = 'override' if ow else 'skip'
-		fb_args = [
-			filebot,
-			'-rename', source,
-			'--output', dest,
-			'--db', db,
-			'--format', format,
-			'--lang', lang,
-			'--conflict', conflict,
-			'-non-strict', '-r'
-		]
-		if query:
-			fb_args.append('--q')
-			fb_args.append(query)
-		try:
-			subprocess.call(fb_args)
-		except Exception, e:
-			print 'could not rename file:', str(e)
 		
 class Notifier():
 	def __init__(self, pushbullet, email):
@@ -292,6 +272,33 @@ class Notifier():
 		
 		print 'sending email notification'
 		em.send_email(self.email_info, msg)
+	
+class FileBot():
+	def __init__(self, fb, ow):
+		self.fb = fb
+		self.conflict = 'override' if ow else 'skip'
+		
+	def rename_move(self, info):
+		fb_args = [
+			self.fb,
+			'-rename', info['from'],
+			'--output', info['to'],
+			'--db', info['database'],
+			'--format', info['format'],
+			'--lang', info['language'],
+			'--conflict', self.conflict,
+			'-non-strict', '-r'
+		]
+		
+		if info['query']:
+			fb_args.append('--q')
+			fb_args.append(info['query'])
+			
+		try:
+			subprocess.call(fb_args)
+		except Exception, e:
+			print 'could not rename file:', str(e)
+			
 		
 if __name__ == "__main__":
 	print HEADER
@@ -304,12 +311,11 @@ if __name__ == "__main__":
 		torrent = Torrent(sys.argv[1], sys.argv[2], sys.argv[3])
 	
 	labels_folder = os.path.normpath(os.path.join(root, 'labels'))
-	filebot = os.path.normpath(os.path.join(root, 'Lib', 'FileBot_4.6', 'filebot'))
-	
 	processor = Processor()
 	
 	config = processor.readConfig(root, 'config')
 	
+	filebot = Filebot(os.path.normpath(os.path.join(root, 'Lib', 'FileBot_4.6', 'filebot')), config.getboolean('General', 'overwrite'))
 	notifier = Notifier(config.getboolean('PushBullet', 'enable'), config.getboolean('Email', 'enable'))
 	notifier.email_info = {
 		'server': config.get("Email", "SMTPServer"),
@@ -352,7 +358,6 @@ if __name__ == "__main__":
 			desiredExtensions = processor.getExtensions(keep_ext, extensions)
 			print 'looking for files with these extensions:', desiredExtensions, '\n'
 			
-			
 			# get words we don't want
 			wordsToIgnore = config.get("Extensions","ignore").split('|')
 			print 'ignoring files with these words in the file name:', wordsToIgnore, '\n'
@@ -383,13 +388,15 @@ if __name__ == "__main__":
 			
 			# use filebot to rename files and move to final directory
 			print 'sending file info to filebot\n'
-			outputDir = label_config.get('Filebot','path')
-			db = label_config.get('Filebot','database')
-			format = label_config.get('Filebot','format')
-			query = label_config.get('Filebot', 'query')
-			lang = label_config.get('Filebot','language')
-			ow = config.getboolean('General', 'overwrite')
-			processor.renameAndMove(filebot, processingDir, outputDir, db, format, query, lang, ow)
+			rename_info = {
+				'from': processingDir,
+				'to': label_config.get('Filebot','path'),
+				'database': label_config.get('Filebot','database'),
+				'format': label_config.get('Filebot','format'),
+				'query': label_config.get('Filebot', 'query'),
+				'language': label_config.get('Filebot','language'),
+			}
+			filebot.rename_move(rename_info)
 			
 			# send notifications
 			notifier.notification = {
