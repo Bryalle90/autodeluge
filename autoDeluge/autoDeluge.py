@@ -299,7 +299,19 @@ class FileBot():
 		except Exception, e:
 			print 'could not rename file:', str(e)
 			
+	def extract(self, source, dest):
+		fb_args = [
+			self.fb,
+			'-extract', source,
+			'--output', dest,
+			'--conflict', self.conflict
+		]
 		
+		try:
+			subprocess.call(fb_args)
+		except Exception, e:
+			print 'could not extract files:', str(e)
+	
 if __name__ == "__main__":
 	print HEADER
 	print 'by:', NAME
@@ -374,10 +386,9 @@ if __name__ == "__main__":
 			processor.createDir(processingDir)
 			print 'copying and extracting files to:\n\t', processingDir
 			print '--'
+			filebot.extract(torrent, processingDir)
 			for file in filesToCopy:
 				processor.copyFile(file, processingDir)
-			for file in filesToExtract:
-				processor.extract(file, processingDir)
 			print '--\n'
 			
 			# clean out unwanted files from processing dir
