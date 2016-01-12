@@ -1,4 +1,4 @@
-from ..deluge_client.client import DelugeRPCClient
+from deluge_client import DelugeRPCClient
 
 class AutoDelugeWrapper:
 	def __init__(self, host, port, username, password):

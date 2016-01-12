@@ -7,6 +7,8 @@
 ### Required
 * [Python 2.7.9](https://www.python.org/downloads/)
 	* This script is written and tested in Python 2.7.9 and Windows 7/8/10
+* [deluge-client](https://pypi.python.org/pypi/deluge-client/1.0.2)
+* [requests library](https://pypi.python.org/pypi/requests/2.9.1)
 * [deluge 1.3.12](http://dev.deluge-torrent.org/wiki/Download)
 * [FileBot](http://www.filebot.net/#download)
 * [Java Runtime Environment](https://java.com/en/download/manual.jsp)
