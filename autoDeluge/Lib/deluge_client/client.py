@@ -4,7 +4,7 @@ import ssl
 import struct
 import zlib
 
-from .rencode import dumps, loads
+from rencode import dumps, loads
 
 RPC_RESPONSE = 1
 RPC_ERROR = 2

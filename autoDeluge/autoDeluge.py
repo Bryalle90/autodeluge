@@ -1,87 +1,42 @@
-import os, sys, time, textwrap
-import errno
-import shutil
-import binascii
-import subprocess
 import ConfigParser
+import pprint
+import textwrap
+import sys, os
+import logging
+import shutil
+import errno
+import binascii
+import math
+import time
 
-from Lib.deluge_client.client import DelugeRPCClient
-from Lib.notifications.pushbullet import PushBullet
-from Lib.notifications.email import Email
+from Lib.mylib.filebot import AutoDelugeFilebot as Filebot
+from Lib.mylib.notify import AutoDelugeNotify as Notify
+from Lib.mylib.deluge_client_wrapper import AutoDelugeWrapper as Client
+
 from Lib.unrar2 import RarFile
 
 HEADER = textwrap.dedent(
 '''
-              _        _    _ _______ _____   _____ 
-             | |      | |  | |__   __|  __ \ / ____|
-   __ _ _   _| |_ ___ | |__| |  | |  | |__) | |     
-  / _` | | | | __/ _ \|  __  |  | |  |  ___/| |     
- | (_| | |_| | || (_) | |  | |  | |  | |    | |____ 
-  \__,_|\__,_|\__\___/|_|  |_|  |_|  |_|     \_____|
+             _       ______     _                  
+            | |      |  _  \   | |                 
+  __ _ _   _| |_ ___ | | | |___| |_   _  __ _  ___ 
+ / _` | | | | __/ _ \| | | / _ \ | | | |/ _` |/ _ \\
+| (_| | |_| | || (_) | |/ /  __/ | |_| | (_| |  __/
+ \__,_|\__,_|\__\___/|___/ \___|_|\__,_|\__, |\___|
+                                         __/ |     
+                                        |____/      
 '''
 )
 NAME = 'Bryan Allen'
-VERSION = '1.2'
-
-class Torrent():
-	def __init__(self, id=None, name=None, path=None):
-		self.id = id
-		self.name = name
-		self.path = path
-		self.files = []
-		self.label = None
+VERSION = '2.0'
 		
-class Client():
-	def __init__(self, host, port, username, password):
-		self.host = host
-		self.port = port
-		self.username = username
-		self.password = password
-		self.client = DelugeRPCClient(host, port, username, password)
-		self.client.connect()
-		self.connected = self.client.connected
-		
-	def get_all_info(self, torrent=None):
-		if torrent:
-			return self.client.call('core.get_torrent_status', torrent.id, [])
-		return self.client.call('core.get_torrents_status')
-		
-	def get_files(self, torrent):
-		files = self.client.call('core.get_torrent_status', torrent.id, ['files'])['files']
-		for file in files:
-			f = os.path.normpath(os.path.join(torrent.path, file['path']))
-			torrent.files.append(f)
-	
-	def get_label(self, torrent):
-		torrent.label = self.client.call('core.get_torrent_status', torrent.id, ['label'])['label']
-		
-	def get_enabled_plugins(self):
-		return self.client.call('core.get_enabled_plugins')
-		
-	def get_method_list(self):
-		return self.client.call('daemon.get_method_list')
-		
-	def pause(self, torrent=None):
-		if torrent:
-			self.client.call('core.pause_torrent', [torrent.id])
-		else:
-			self.client.call('core.pause_all_torrents')
-			
-	def unpause(self, torrent=None):
-		if torrent:
-			self.client.call('core.resume_torrent', [torrent.id])
-		else:
-			self.client.call('core.resume_all_torrents')
-		
-class Processor():
-		
-	def readConfig(self, path, fname):
-		file = os.path.normpath(os.path.join(path, fname) + '.cfg')
+class AutoDeluge:
+	def read_config(self, f):
 		config = ConfigParser.ConfigParser()
-		config.read(file)
+		config.read(f)
 		return config
 		
-	def getExtensions(self, keep_ext, extensions):
+	def get_extensions(self, keep_ext, extensions):
 		ext_list = []
 		if keep_ext['video']:
 			ext_list.extend(extensions['video'])
@@ -89,15 +44,15 @@ class Processor():
 			ext_list.extend(extensions['subs'])
 		if keep_ext['readme']:
 			ext_list.extend(extensions['readme'])
-		return tuple(ext_list)
+		return ext_list
 		
-	def isSubstring(self, list, searchstring):
-		for item in list:
-			if item in searchstring:
+	def is_substring(self, keys, searchstring):
+		for key in keys:
+			if key in searchstring:
 				return True
 		return False
 
-	def isMainRar(self, f):
+	def is_mainRar(self, f):
 		with open(f, "rb") as this_file:
 			byte = this_file.read(12)
 
@@ -110,34 +65,32 @@ class Processor():
 			return True
 		return False
 		
-	def filterFiles(self, files, extensions, ignore):
+	def filter_files(self, files, extensions, ignore_list):
 		keep = []
-		for file in files:
-			if file.endswith(extensions):
-				if not (self.isSubstring(ignore, os.path.split(file)[1])):
-					keep.append(file)
+		for f in files:
+			if f.endswith(tuple(extensions)) and not self.is_substring(ignore_list, os.path.split(f)[1]):
+				keep.append(f)
 		return keep
 		
-	def filterArchives(self, files, extensions, ignore):
+	def filter_archives(self, files, extensions, ignore_list):
 		keep = []
-		for file in files:
-			if file.endswith(extensions):
-				if not (self.isSubstring(ignore, os.path.split(file)[1])):
-					if file.endswith('.rar'):
-						try:
-							if self.isMainRar(file):
-								keep.append(file)
-						except Exception, e:
-							print 'File does not exist:', file, '\n'
-					else:
-						keep.append(file)
+		for f in files:
+			if f.endswith(tuple(extensions)) and not self.is_substring(ignore_list, os.path.split(f)[1]):
+				if f.endswith('.rar'):
+					try:
+						if self.is_mainRar(f):
+							keep.append(f)
+					except Exception, e:
+						logger.warning('File does not exist: '+str(e))
+				else:
+					keep.append(f)
 		return keep
 		
-	def extract(self, file, destination):
-		file_name = os.path.split(file)[1]
-		print 'attempting to extract:', file_name
+	def extract(self, f, destination):
+		file_name = os.path.split(f)[1]
+		logger.debug('attempting to extract: '+file_name)
 		try:
-			rar_handle = RarFile(file)
+			rar_handle = RarFile(f)
 			for rar_file in rar_handle.infolist():
 				sub_path = os.path.join(destination, rar_file.filename)
 				if rar_file.isdir and not os.path.exists(sub_path):
@@ -145,210 +98,158 @@ class Processor():
 				else:
 					rar_handle.extract(condition=[rar_file.index], path=destination, withSubpath=True, overwrite=False)
 			del rar_handle
-			print '\tSuccess!'
+			logger.debug('Success!')
+			return True
 		except Exception, e:
-			print '\tFailed:', str(e)
+			logger.warning('Failed: '+str(e))
+		return False
 			
-	def createDir(self, directory):
+	def create_dir(self, directory):
 		if not os.path.isdir(directory):
+			logger.debug('Attempting to create directory: '+directory)
 			try:
 				os.makedirs(directory)
+				logger.debug('Success!')
 			except OSError as e:
 				if e.errno != errno.EEXIST:
 					raise
 				pass
+		else:
+			logger.debug('Directory already exists')
 				
-	def copyFile(self, source_file, destination):
+	def copy_file(self, source_file, destination):
 		if os.path.isfile(source_file):
 			file_name = os.path.split(source_file)[1]
 			destination_file = os.path.normpath(os.path.join(destination, file_name))
-			print 'attempting to copy:', file_name
+			logger.debug('attempting to copy: '+file_name)
 			if not os.path.isfile(destination_file):
 				try:
 					shutil.copy2(source_file, destination_file)
-					print '\tSuccess!'
+					logger.debug('Success!')
 				except Exception, e:
-					print '\tFailed:',str(e)
+					logger.warning('Failed: '+str(e))
+					return None
 			else:
-				print '\t', file_name, 'already exists in destination - skipping'
+				logger.debug(file_name+' already exists in destination - skipping')
 			return destination_file
+		return None
 			
-	def cleanDir(self, path, desiredExtensions, ignore):
+	def clean_dir(self, path, desiredExtensions, ignore_list):
 		# remove any file that doesn't have a desired extension or has an ignore word in the file name
 		for dirName, subdirList, fileList in os.walk(path):
-			for file in fileList:
-				if not file.endswith(desiredExtensions) or self.isSubstring(ignore, file):
+			for f in fileList:
+				if not f.endswith(tuple(desiredExtensions)) or self.is_substring(ignore_list, f):
+					logger.debug('Removing file: '+f)
 					try:
-						print 'removing file:', file
-						os.remove(os.path.normpath(os.path.join(dirName, file)))
+						os.remove(os.path.normpath(os.path.join(dirName, f)))
 					except Exception, e:
-						print 'could not delete ' + file + ': ' + str(e)
+						logger.warning('Error: could not delete file: '+f)
+						logger.warning('MSG: '+str(e))
 						
 		# remove any folder that is completely empty
 		for dirName, subdirList, fileList in os.walk(path, topdown=False):
 			if len(fileList) == 0 and len(subdirList) == 0:
-				print 'removing directory:', dirName
+				logger.debug('removing directory: '+dirName)
 				os.rmdir(dirName)
 		
-class Notifier():
-	def __init__(self, pushbullet, email):
-		self.pushbullet = pushbullet
-		self.email = email
-		self.pb_info = None
-		self.email_info = None
-		self.notification = None
-		
-	def send(self):
-		if self.pushbullet:
-			self.sendPush()
-		if self.email:
-			self.sendEmail()
-		
-	def sendPush(self):
-		pushbullet = PushBullet(self.pb_info['token'])
-		subject = self.notification['subject']
-		body = 'title: ' + self.notification['title'] + '\n' +\
-				'label: ' + self.notification['label'] + '\n' +\
-				'date: ' + self.notification['date'] + '\n' +\
-				'time: ' + self.notification['time']
-		
-		print 'pushing notification via pushbullet'
-		if not self.pb_info['devices'] == ['']:
-			devices = pushbullet.getDevices()
-			for device in devices:
-				if device['pushable'] and device['nickname'] in self.pb_info['devices']:
-					pushbullet.pushNote(device['iden'], subject, body)
-		else:
-			pushbullet.pushNote('', subject, body)
-	
-	def sendEmail(self):
-		em = Email()
-		
-		header = 'Content-type: text/html\n' + 'Subject:' + self.notification['subject'] + '\n'
-		body = """
-		<html xmlns="http://www.w3.org/1999/xhtml">
-			<head>
-				<style type="text/css">
-				table.gridtable {
-					font-family: verdana,arial,sans-serif;
-					font-size:11px;
-					color:#333333;
-					border-width: 0px;
-					border-color: green;
-					border-collapse: collapse;
-				}
-				table.gridtable th {
-					border-width: 0x;
-					padding: 8px;
-					border-style: solid;
-					border-color: green;
-					background-color: green;
-					align: left;
-				}
-				table.gridtable td {
-					border-width: 0px;
-					padding: 8px;
-					border-style: solid;
-					border-color: white;
-					background-color: #ffffff;
-				}
-				</style>
-			</head>
-			<body bgcolor="black">
-				<table class="gridtable">
-					<colgroup>
-						<col/>
-						<col/>
-					</colgroup>
-					<tr><td>Title:</td><td>%s</td></tr>
-					<tr><td>Label:</td><td>%s</td></tr>
-					<tr><td>Date:</td><td>%s</td></tr>
-					<tr><td>Time:</td><td>%s</td></tr>
-				</table>
-			</body>
-		</html>
-		""" % (self.notification['title'], self.notification['label'], self.notification['date'], self.notification['time'])
-		msg = header + body
-		
-		print 'sending email notification'
-		em.send_email(self.email_info, msg)
-	
-class FileBot():
-	def __init__(self, fb, ow=False):
-		self.fb = fb
-		self.conflict = 'override' if ow else 'skip'
-		
-	def rename_move(self, info):
-		fb_args = [
-			self.fb,
-			'-rename', info['from'],
-			'--output', info['to'],
-			'--db', info['database'],
-			'--format', info['format'],
-			'--lang', info['language'],
-			'--conflict', self.conflict,
-			'-non-strict', '-r'
-		]
-		
-		if info['query']:
-			fb_args.append('--q')
-			fb_args.append(info['query'])
-			
-		try:
-			subprocess.call(fb_args)
-		except Exception, e:
-			print 'could not rename file:', str(e)
-			
-	def extract(self, torrent, dest):
-		source = os.path.normpath(os.path.join(torrent.path, torrent.name))
-		fb_args = [
-			self.fb,
-			'-extract', source,
-			'--output', dest,
-			'--conflict', self.conflict
-		]
-		
-		try:
-			subprocess.call(fb_args)
-		except Exception, e:
-			print 'could not extract files:', str(e)
-	
-class MediaServer():
-	def __init__(self, plex=False):
-		self.plex = plex
-		self.plexScanner = None
-		
-	def scan(self):
-		if self.plex and self.plexScanner:
-			plex_args = [
-				plexScanner, '-s'
-			]
-			try:
-				subprocess.call(plex_args)
-			except Exception, e:
-				print 'could not extract files:', str(e)
-	
+	def convert_size(self, amt, start, end, kilo=1024.0):
+		bits_per_byte = 8.0
+		pre = {'B':0, 'K':1, 'M':2, 'G':3, 'T':4, 'P':5}
+
+		# convert amt to bytes
+		if start[-1] == 'b':
+			amt = amt / bits_per_byte
+
+		amt_bytes = amt * math.pow(kilo, pre[start[0]]) if start[0] in pre else amt
+
+		# convert to end
+		amt_end = amt_bytes / math.pow(kilo, pre[end[0]]) if end[0] in pre else amt_bytes
+
+		if end[-1] == 'b':
+			amt_end = amt_end * bits_per_byte
+
+		return amt_end
+
+	def round_dec(self, val, places):
+		return int((val * math.pow(10.0, places)) + 0.5) / 100.0
+
 if __name__ == "__main__":
-	print HEADER
-	print 'by:', NAME
-	print 'version:', VERSION
 	print '-----------------------------------------------------'
-	
+	print HEADER
+	print 'version:', VERSION
+	print 'by:', NAME
+	print '-----------------------------------------------------'
+
+	# get arguments
+	if len(sys.argv) < 2:
+		sys.exit('Error: invalid argument amount')
 	root = os.path.dirname(os.path.realpath(sys.argv[0]))
-	if len(sys.argv) > 1:
-		torrent = Torrent(sys.argv[1], sys.argv[2], sys.argv[3])
-	
-	labels_folder = os.path.normpath(os.path.join(root, 'labels'))
-	processor = Processor()
-	
-	config = processor.readConfig(root, 'config')
-	
-	filebot = FileBot(os.path.normpath(os.path.join(root, 'Lib', 'FileBot_4.6', 'filebot')), config.getboolean('General', 'overwrite'))
-	server = MediaServer(config.getboolean('Plex', 'enable'))
-	if server.plex:
-		server.plexScanner = os.path.normpath(config.get("Plex", "PlexMediaScanner"))
-	
-	notifier = Notifier(config.getboolean('PushBullet', 'enable'), config.getboolean('Email', 'enable'))
+	tor_hash = sys.argv[1]
+
+	# set up logger
+	logger = logging.getLogger('autoDeluge')
+	logger.setLevel(logging.DEBUG)
+	# console handler
+	ch = logging.StreamHandler()
+	ch.setLevel(logging.INFO)
+	# file handler
+	log = os.path.normpath(os.path.join(root, 'log') + '.txt')
+	fh = logging.FileHandler(log)
+	fh.setLevel(logging.DEBUG)
+	# add formatter
+	formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+	ch.setFormatter(formatter)
+	fh.setFormatter(formatter)
+	# add handlers
+	logger.addHandler(ch)
+	logger.addHandler(fh)
+
+	logger.info('Start log')
+
+	# create torrent dict
+	torrent = {}
+	torrent['hash'] = tor_hash
+	logger.debug('Torrent hash: '+torrent['hash'])
+
+	# create processor
+	processor = AutoDeluge()
+
+	# read main config
+	logger.info('Reading config')
+	config_file = os.path.normpath(os.path.join(root, 'config') + '.cfg')
+	config = processor.read_config(config_file)
+	logger.info('Config successfully read')
+	logger.debug(config_file)
+
+	# set up deluge
+	logger.info('Connecting to Deluge')
+	host = str(config.get('Client','host'))
+	port = config.getint('Client','port')
+	username = config.get('Client','username')
+	password = config.get('Client','password')
+	try:
+		deluge = Client(host, port, username, password)
+	except Exception, e:
+		logger.critical('Error: could not connect to Deluge')
+		logger.critical(str(e))
+		sys.exit(-1)
+	logger.info('Connected to Deluge')
+
+	# set up filebot
+	logger.info('Setting up FileBot')
+	filebot_path = os.path.normpath(config.get("FileBot","path"))
+	overwrite = config.getboolean('General', 'overwrite')
+	filebot = Filebot(filebot_path, overwrite)
+	logger.info('Filebot set up')
+	logger.debug(str(filebot))
+
+	# set up notifier
+	logger.info('Setting up notifiers')
+	notifiers = []
+	notifications = config.items('Notifications')
+	for n in notifications:
+		notifiers.append(config.getboolean('Notifications', n[0]))
+	notifier = Notify(notifiers)
 	notifier.email_info = {
 		'server': config.get("Email", "SMTPServer"),
 		'port': config.get("Email", "SMTPPort"),
@@ -360,86 +261,145 @@ if __name__ == "__main__":
 		'token': config.get("PushBullet", "token"),
 		'devices': config.get("PushBullet", "devices").split('|')
 	}
+	logger.info('Notifiers set up')
+	logger.debug(str(notifier))
+
+	# get torrent info from deluge
+	logger.info('Getting torrent info from Deluge')
+	info = ['active_time', 'all_time_download', 'files', 'label', 'name', 'save_path', 'seeding_time']
+	try:
+		torrent_info = deluge.get_info(torrent['hash'], info)[torrent['hash']]
+	except Exception, e:
+		logger.critical('Error: could not get info from deluge')
+		logger.critical(str(e))
+		sys.exit(-1)
+	torrent.update(torrent_info)
+	logger.info('Received torrent info from deluge')
+
+	# check torrent label
+	logger.info('Checking torrent label')
+	if torrent['label'] == '':
+		logger.critical('Error: no label returned for torrent')
+		sys.exit(-1)
+	logger.debug(torrent['label'])
+	logger.info('Torrent label found')
+
+	# check for label file
+	logger.info('Reading label config')
+	labels_folder = os.path.normpath(os.path.join(root, 'labels'))
+	label_file = os.path.normpath(os.path.join(labels_folder, torrent['label']+'.cfg'))
+	if not os.path.isfile(label_file):
+		logger.critical('Error: no label file found for \"'+torrent['label']+'\" in '+labels_folder)
+		sys.exit(-1)
+	label_config = processor.read_config(label_file)
+	logger.info('Label config successfully read')
+	logger.debug(label_file)
+
+	# combine save path with file paths to get full paths
+	logger.info('Creating full torrent file paths')
+	files = []
+	for f in torrent['files']:
+		full_path = os.path.normpath(os.path.join(torrent['save_path'], f['path']))
+		files.append(full_path)
+	torrent['files'] = files
+	logger.info('Full torrent file paths created')
+	for f in torrent['files']:
+		logger.debug(f)
+
+	# get known file extensions
+	extensions = {
+					'video': config.get('Extensions','video').split('|'),
+					'subs': config.get('Extensions','subtitle').split('|'),
+					'readme': config.get('Extensions','readme').split('|'),
+				}
+
+	# get wanted file extensions
+	keep_ext = {
+					'video': label_config.getboolean('Type', 'video'),
+					'subs': label_config.getboolean('Type', 'subtitle'),
+					'readme': label_config.getboolean('Type', 'readme')
+				}
+	copy_extensions = processor.get_extensions(keep_ext, extensions)
+	archive_extensions = config.get("Extensions","archive").split('|')
+	logger.debug('Extensions to copy: '+str(copy_extensions))
+	logger.debug('Extensions to extract: '+str(archive_extensions))
+
+	# get words not wanted
+	ignore_list = config.get("Extensions","ignore").split('|')
+	logger.debug('Ignored words: '+str(ignore_list))
+
+	# get files to copy
+	logger.info('Looking for files to copy')
+	copy_files = processor.filter_files(torrent['files'], copy_extensions, ignore_list)
+	for f in copy_files:
+		logger.debug(f)
+
+	# get archives to extract from
+	logger.info('Looking for files to extract')
+	archive_files = processor.filter_archives(torrent['files'], archive_extensions, ignore_list)
+	for f in archive_files:
+		logger.debug(f)
+
+	# create processing directory
+	logger.info('Creating processing directory')
+	processing_dir = os.path.normpath(os.path.join(config.get("General","path"), torrent['name']))
+	try:
+		processor.create_dir(processing_dir)
+	except Exception, e:
+		logger.critical('Error: could not create processing directory ('+processing_dir+')')
+		logger.critical('MSG: '+str(e))
+		sys.exit(-1)
+	logger.info('Processing directory created')
+	logger.debug(processing_dir)
+
+	# extract files to processing directory
+	logger.info('Extracting files')
+	for f in archive_files:
+		processor.extract(f, processing_dir)
+
+	# copy files to processing directory
+	logger.info('Copying files')
+	for f in copy_files:
+		processor.copy_file(f, processing_dir)
+
+	# clean out unwanted files from processing dir
+	logger.info('Cleaning processing dir')
+	processor.clean_dir(processing_dir, copy_extensions, ignore_list)
+
+	# use filebot to rename files and move to final directory
+	logger.info('Sending file info to filebot')
+	rename_info = {
+		'from': processing_dir,
+		'to': label_config.get('Filebot','path'),
+		'database': label_config.get('Filebot','database'),
+		'format': label_config.get('Filebot','format'),
+		'query': label_config.get('Filebot', 'query'),
+		'language': label_config.get('Filebot','language'),
+	}
+	filebot.rename_move(rename_info)
+
+	# calculate size and speed of torrent
+	size = processor.convert_size(float(torrent['all_time_download']), 'B', config.get('Display', 'filesize'))
+	size = processor.round_dec(size, 2)
+	dl_time = int(torrent['active_time']) - int(torrent['seeding_time'])
+	speed = processor.convert_size(float(torrent['all_time_download']), 'B', config.get('Display', 'speed')) / dl_time
+	speed = processor.round_dec(speed, 2)
+	size = str(size) + ' ' + config.get('Display', 'filesize')
+	speed = str(speed) + ' ' + config.get('Display', 'speed') + 'ps'
+	logger.info('Notificaiton data gathered')
 	
-	host = str(config.get('Client','host'))
-	port = config.getint('Client','port')
-	username = config.get('Client','username')
-	password = config.get('Client','password')
-	deluge = Client(host, port, username, password)
+	logger.info('Sending notifications')
+	# send notifications
+	notifier.notification = {
+		'subject': 'autoDeluge Notification',
+		'title': torrent['name'],
+		'label': torrent['label'],
+		'size': size,
+		'speed': speed,
+		'date': time.strftime("%m/%d/%Y"),
+		'time': time.strftime("%I:%M:%S%p")
+	}
+	notifier.send()
 	
-	if deluge.connected:
-	
-		deluge.get_files(torrent)
-		deluge.get_label(torrent)
-	
-		if torrent.label == '':
-			print 'label is blank - skipping'
-		elif os.path.isfile(os.path.join(labels_folder, torrent.label) + '.cfg'):
-			# get what extensions we want
-			extensions = {
-				'video': config.get('Extensions','video').split('|'),
-				'subs': config.get('Extensions','subtitle').split('|'),
-				'readme': config.get('Extensions','readme').split('|'),
-			}
-			label_config = processor.readConfig(labels_folder, torrent.label)
-			keep_ext = {
-				'video': label_config.getboolean('Type', 'video'),
-				'subs': label_config.getboolean('Type', 'subtitle'),
-				'readme': label_config.getboolean('Type', 'readme')
-			}
-			desiredExtensions = processor.getExtensions(keep_ext, extensions)
-			print 'looking for files with these extensions:', desiredExtensions, '\n'
-			
-			# get words we don't want
-			wordsToIgnore = config.get("Extensions","ignore").split('|')
-			print 'ignoring files with these words in the file name:', wordsToIgnore, '\n'
-			
-			# get what files to keep from torrent folder
-			filesToCopy = processor.filterFiles(torrent.files, desiredExtensions, wordsToIgnore)
-			
-			# get archives to extract from
-			archiveExtensions = tuple(config.get("Extensions","archive").split('|'))
-			filesToExtract = processor.filterArchives(torrent.files, archiveExtensions, wordsToIgnore)
-			
-			# copy/extract files to processing directory
-			processingDir = os.path.normpath(os.path.join(config.get("General","path"), torrent.name))
-			processor.createDir(processingDir)
-			print 'copying and extracting files to:\n\t', processingDir
-			print '--'
-			for file in filesToExtract:
-				processor.extract(file, processingDir)
-			for file in filesToCopy:
-				processor.copyFile(file, processingDir)
-			print '--\n'
-			
-			# clean out unwanted files from processing dir
-			print 'cleaning unwanted files in:\n\t', processingDir
-			print '--'
-			processor.cleanDir(processingDir, desiredExtensions, wordsToIgnore)
-			print '--\n'
-			
-			# use filebot to rename files and move to final directory
-			print 'sending file info to filebot\n'
-			rename_info = {
-				'from': processingDir,
-				'to': label_config.get('Filebot','path'),
-				'database': label_config.get('Filebot','database'),
-				'format': label_config.get('Filebot','format'),
-				'query': label_config.get('Filebot', 'query'),
-				'language': label_config.get('Filebot','language'),
-			}
-			filebot.rename_move(rename_info)
-			
-			# send notifications
-			notifier.notification = {
-				'subject': 'autoDeluge Notification',
-				'title': torrent.name,
-				'label': torrent.label,
-				'date': time.strftime("%m/%d/%Y"),
-				'time': time.strftime("%I:%M:%S%p")
-			}
-			notifier.send()
-			
-		else:
-			print 'could not find label config file'
-			
+	for n in notifier.notification:
+		logger.debug(n+': '+notifier.notification[n])

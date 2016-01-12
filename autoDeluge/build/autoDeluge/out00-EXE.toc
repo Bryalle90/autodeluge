@@ -1,9 +1,0 @@
-('G:\\Projects\\autoDeluge\\autoDeluge\\build\\autoDeluge\\autoDeluge.exe',
- False,
- False,
- None,
- None,
- [],
- None,
- False,
- 1433904479L)
