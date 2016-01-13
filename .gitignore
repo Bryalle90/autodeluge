@@ -1,1 +1,4 @@
 autoDeluge/log.txt
+*.spec
+autoDeluge/build/
+autoDeluge/dist/
