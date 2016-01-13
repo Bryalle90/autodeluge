@@ -14,6 +14,7 @@ from Lib.mylib.notify import AutoDelugeNotify as Notify
 from Lib.mylib.deluge_client_wrapper import AutoDelugeWrapper as Client
 
 from Lib.unrar2 import RarFile
+from Lib.mylib.s_zip import Archive
 
 HEADER = textwrap.dedent(
 '''
@@ -101,8 +102,22 @@ class AutoDeluge:
 			logger.debug('Success!')
 			return True
 		except Exception, e:
-			logger.warning('Failed: '+str(e))
+			logger.warning(str(e))
 		return False
+
+	def unpack(self, program, f, dest):
+		file_name = os.path.split(f)[1]
+		logger.debug('attempting to extract: '+file_name)
+		try:
+			archive = Archive(program, f)
+			archive.extract_all(dest)
+			logger.debug('Success!')
+			return True
+		except Exception, e:
+			logger.warn(str(e))
+		return False
+
+
 			
 	def create_dir(self, directory):
 		if not os.path.isdir(directory):
@@ -347,15 +362,16 @@ if __name__ == "__main__":
 		processor.create_dir(processing_dir)
 	except Exception, e:
 		logger.critical('Error: could not create processing directory ('+processing_dir+')')
-		logger.critical('MSG: '+str(e))
+		logger.critical(str(e))
 		sys.exit(-1)
 	logger.info('Processing directory created')
 	logger.debug(processing_dir)
 
 	# extract files to processing directory
+	unpacker = os.path.normpath(config.get("7zip", "path"))
 	logger.info('Extracting files')
 	for f in archive_files:
-		processor.extract(f, processing_dir)
+		processor.unpack(unpacker, f, processing_dir)
 
 	# copy files to processing directory
 	logger.info('Copying files')
@@ -376,7 +392,12 @@ if __name__ == "__main__":
 		'query': label_config.get('Filebot', 'query'),
 		'language': label_config.get('Filebot','language'),
 	}
-	filebot.rename_move(rename_info)
+	try:
+		filebot.rename_move(rename_info)
+	except Exception, e:
+		logger.error('Could not rename files')
+		logger.exception(str(e))
+		sys.exit(-1)
 
 	# calculate size and speed of torrent
 	size = processor.convert_size(float(torrent['all_time_download']), 'B', config.get('Display', 'filesize'))

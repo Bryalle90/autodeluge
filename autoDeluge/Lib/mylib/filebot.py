@@ -1,8 +1,6 @@
 import os
 import subprocess
-import logging
 
-logger = logging.getLogger(__name__)
 class AutoDelugeFilebot:
 	def __init__(self, path, ow=False):
 		self.fb = os.path.normpath(os.path.join(path, 'filebot'))
@@ -38,5 +36,4 @@ class AutoDelugeFilebot:
 			subprocess.call([self.fb] + fb_args)
 			#self.launchWithoutConsole(self.fb, fb_args)
 		except Exception, e:
-			logger.warning('Error: could not rename file')
-			logger.warning('MSG: '+str(e))
+			raise e
