@@ -25,10 +25,12 @@ class Archive:
 			args.append('-aos')
 			
 		try:
-			subprocess.call([self.program] + args)
+			ret = subprocess.call([self.program] + args)
 			#self.launchWithoutConsole(self.program, args)
 		except Exception, e:
 			raise e
+
+		return ret
 
 	def look(self):
 		subprocess.call([self.program, 'l', self.file_name])

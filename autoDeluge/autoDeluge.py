@@ -13,7 +13,6 @@ from Lib.mylib.filebot import AutoDelugeFilebot as Filebot
 from Lib.mylib.notify import AutoDelugeNotify as Notify
 from Lib.mylib.deluge_client_wrapper import AutoDelugeWrapper as Client
 
-from Lib.unrar2 import RarFile
 from Lib.mylib.s_zip import Archive
 
 HEADER = textwrap.dedent(
@@ -54,8 +53,8 @@ class AutoDeluge:
 		return False
 
 	def is_mainRar(self, f):
-		with open(f, "rb") as this_file:
-			byte = this_file.read(12)
+		with open(f, "rb") as rar_file:
+			byte = rar_file.read(12)
 
 		spanned = binascii.hexlify(byte[10])
 		main = binascii.hexlify(byte[11])
@@ -86,36 +85,16 @@ class AutoDeluge:
 				else:
 					keep.append(f)
 		return keep
-		
-	def extract(self, f, destination):
-		file_name = os.path.split(f)[1]
-		logger.debug('attempting to extract: '+file_name)
-		try:
-			rar_handle = RarFile(f)
-			for rar_file in rar_handle.infolist():
-				sub_path = os.path.join(destination, rar_file.filename)
-				if rar_file.isdir and not os.path.exists(sub_path):
-					os.makedirs(sub_path)
-				else:
-					rar_handle.extract(condition=[rar_file.index], path=destination, withSubpath=True, overwrite=False)
-			del rar_handle
-			logger.debug('Success!')
-			return True
-		except Exception, e:
-			logger.warning(str(e))
-		return False
 
 	def unpack(self, program, f, dest):
 		file_name = os.path.split(f)[1]
 		logger.debug('attempting to extract: '+file_name)
 		try:
 			archive = Archive(program, f)
-			archive.extract_all(dest)
-			logger.debug('Success!')
-			return True
+			return archive.extract_all(dest)
 		except Exception, e:
 			logger.warn(str(e))
-		return False
+		return None # unknown error
 
 
 			
@@ -369,9 +348,23 @@ if __name__ == "__main__":
 
 	# extract files to processing directory
 	unpacker = os.path.normpath(config.get("7zip", "path"))
+	unpack_code = {
+					0:'No Error',
+					1:'Warning (Non fatal error(s)). For example, one or more files were locked by some other application, so they were not compressed.',
+					2:'Fatal Error',
+					7:'Command line error',
+					8:'Not enough memory for operation',
+					255:'User stopped the process'
+					}
 	logger.info('Extracting files')
 	for f in archive_files:
-		processor.unpack(unpacker, f, processing_dir)
+		u = processor.unpack(unpacker, f, processing_dir)
+		if not u:
+			logger.debug('Success!')
+		elif u in unpack_code:
+			logger.debug('Failed : '+unpack_code[u])
+		else:
+			logger.debug('Failed :(')
 
 	# copy files to processing directory
 	logger.info('Copying files')
