@@ -174,6 +174,9 @@ if __name__ == "__main__":
 	print 'by:', NAME
 	print '-----------------------------------------------------'
 
+	# allow time for deluge to place files
+	time.sleep(5)
+
 	# get arguments
 	if len(sys.argv) < 2:
 		sys.exit('Error: invalid argument amount')
@@ -359,10 +362,10 @@ if __name__ == "__main__":
 	logger.info('Extracting files')
 	for f in archive_files:
 		u = processor.unpack(unpacker, f, processing_dir)
-		if not u:
+		if u == 0:
 			logger.debug('Success!')
 		elif u in unpack_code:
-			logger.debug('Failed : '+unpack_code[u])
+			logger.debug('Failed: '+unpack_code[u])
 		else:
 			logger.debug('Failed :(')
 
