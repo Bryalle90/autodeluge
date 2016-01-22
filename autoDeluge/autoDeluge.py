@@ -374,6 +374,9 @@ if __name__ == "__main__":
 	for f in copy_files:
 		processor.copy_file(f, processing_dir)
 
+	# allow time for autoDeluge to place files
+	time.sleep(5)
+
 	# clean out unwanted files from processing dir
 	logger.info('Cleaning processing dir')
 	processor.clean_dir(processing_dir, copy_extensions, ignore_list)
