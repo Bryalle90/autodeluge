@@ -174,6 +174,8 @@ if __name__ == "__main__":
 	print 'by:', NAME
 	print '-----------------------------------------------------'
 
+	status = 'Success'
+	
 	# allow time for deluge to place files
 	time.sleep(2)
 
@@ -405,6 +407,7 @@ if __name__ == "__main__":
 			status = 'Failed - Filebot error: ' + str(e)
 
 	# calculate size and speed of torrent
+	logger.info('Gathering notification data')
 	size = processor.convert_size(float(torrent['all_time_download']), 'B', config.get('Display', 'filesize'))
 	size = processor.round_dec(size, 2)
 	dl_time = int(torrent['active_time']) - int(torrent['seeding_time'])
@@ -412,8 +415,6 @@ if __name__ == "__main__":
 	speed = processor.round_dec(speed, 2)
 	size = str(size) + ' ' + config.get('Display', 'filesize')
 	speed = str(speed) + ' ' + config.get('Display', 'speed') + 'ps'
-	if not status:
-		status = 'Success'
 	logger.info('Notificaiton data gathered')
 	
 	logger.info('Sending notifications')
