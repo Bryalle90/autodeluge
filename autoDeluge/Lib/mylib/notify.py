@@ -34,7 +34,8 @@ class AutoDelugeNotify:
 				'size: ' + self.notification['size'] + '\n' +\
 				'avg speed: ' + self.notification['speed'] + '\n' +\
 				'date: ' + self.notification['date'] + '\n' +\
-				'time: ' + self.notification['time']
+				'time: ' + self.notification['time'] + '\n' +\
+				'status: ' + self.notification['status']
 		
 		logger.info('pushing notification via pushbullet')
 		if not self.pb_info['devices'] == ['']:
@@ -90,10 +91,11 @@ class AutoDelugeNotify:
 					<tr><td>Avg Speed:</td><td>%s</td></tr>
 					<tr><td>Date:</td><td>%s</td></tr>
 					<tr><td>Time:</td><td>%s</td></tr>
+					<tr><td>Status:</td><td>%s</td></tr>
 				</table>
 			</body>
 		</html>
-		""" % (self.notification['title'], self.notification['label'], self.notification['size'], self.notification['speed'], self.notification['date'], self.notification['time'])
+		""" % (self.notification['title'], self.notification['label'], self.notification['size'], self.notification['speed'], self.notification['date'], self.notification['time'], self.notification['status'])
 		msg = header + body
 		
 		logger.info('sending notification via email')

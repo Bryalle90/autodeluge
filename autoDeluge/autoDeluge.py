@@ -175,7 +175,7 @@ if __name__ == "__main__":
 	print '-----------------------------------------------------'
 
 	# allow time for deluge to place files
-	time.sleep(5)
+	time.sleep(2)
 
 	# get arguments
 	if len(sys.argv) < 2:
@@ -366,8 +366,10 @@ if __name__ == "__main__":
 			logger.debug('Success!')
 		elif u in unpack_code:
 			logger.debug('Failed: '+unpack_code[u])
+			status = 'Partial Failure - Some files not extracted'
 		else:
 			logger.debug('Failed :(')
+			status = 'Partial Failure - Some files not extracted'
 
 	# copy files to processing directory
 	logger.info('Copying files')
@@ -375,28 +377,32 @@ if __name__ == "__main__":
 		processor.copy_file(f, processing_dir)
 
 	# allow time for autoDeluge to place files
-	time.sleep(5)
+	time.sleep(2)
 
 	# clean out unwanted files from processing dir
 	logger.info('Cleaning processing dir')
 	processor.clean_dir(processing_dir, copy_extensions, ignore_list)
 
-	# use filebot to rename files and move to final directory
-	logger.info('Sending file info to filebot')
-	rename_info = {
-		'from': processing_dir,
-		'to': label_config.get('Filebot','path'),
-		'database': label_config.get('Filebot','database'),
-		'format': label_config.get('Filebot','format'),
-		'query': label_config.get('Filebot', 'query'),
-		'language': label_config.get('Filebot','language'),
-	}
-	try:
-		filebot.rename_move(rename_info)
-	except Exception, e:
-		logger.error('Could not rename files')
-		logger.exception(str(e))
-		sys.exit(-1)
+	# check if processing dir still exists
+	if not os.path.isdir(processing_dir):
+		status = 'Failed - No files found after extracting/copying'
+	else:
+		# use filebot to rename files and move to final directory
+		logger.info('Sending file info to filebot')
+		rename_info = {
+			'from': processing_dir,
+			'to': label_config.get('Filebot','path'),
+			'database': label_config.get('Filebot','database'),
+			'format': label_config.get('Filebot','format'),
+			'query': label_config.get('Filebot', 'query'),
+			'language': label_config.get('Filebot','language'),
+		}
+		try:
+			filebot.rename_move(rename_info)
+		except Exception, e:
+			logger.error('Could not rename files')
+			logger.exception(str(e))
+			status = 'Failed - Filebot error: ' + str(e)
 
 	# calculate size and speed of torrent
 	size = processor.convert_size(float(torrent['all_time_download']), 'B', config.get('Display', 'filesize'))
@@ -406,6 +412,8 @@ if __name__ == "__main__":
 	speed = processor.round_dec(speed, 2)
 	size = str(size) + ' ' + config.get('Display', 'filesize')
 	speed = str(speed) + ' ' + config.get('Display', 'speed') + 'ps'
+	if not status:
+		status = 'Success'
 	logger.info('Notificaiton data gathered')
 	
 	logger.info('Sending notifications')
@@ -417,7 +425,8 @@ if __name__ == "__main__":
 		'size': size,
 		'speed': speed,
 		'date': time.strftime("%m/%d/%Y"),
-		'time': time.strftime("%I:%M:%S%p")
+		'time': time.strftime("%I:%M:%S%p"),
+		'status': status
 	}
 	notifier.send()
 	
