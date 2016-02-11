@@ -415,12 +415,13 @@ if __name__ == "__main__":
 	speed = processor.round_dec(speed, 2)
 	size = str(size) + ' ' + config.get('Display', 'filesize')
 	speed = str(speed) + ' ' + config.get('Display', 'speed') + 'ps'
+	subject = 'AutoDeluge Success' if status == 'Success' else 'AutoDeluge Failure'
 	logger.info('Notificaiton data gathered')
 	
 	logger.info('Sending notifications')
 	# send notifications
 	notifier.notification = {
-		'subject': 'autoDeluge Notification',
+		'subject': subject,
 		'title': torrent['name'],
 		'label': torrent['label'],
 		'size': size,
